@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -8,6 +9,11 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdbool.h>
+
+volatile sig_atomic_t stop = 0;
+void handle_signal(int sig) {
+    stop = 1;
+}
 
 void usage(char* name) {
     printf("Usage: %s <port> <size of packet>", name);
@@ -23,6 +29,8 @@ bool validate_number(char* num) {
 }
 
 int main(int argc, char** argv) {
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
     int port, buffer_size;
     if (argc != 3) {
         usage(argv[0]);
@@ -90,7 +98,7 @@ int main(int argc, char** argv) {
     }
 
     printf("Server started on %d port\n", port);
-    while (true) {
+    while (!stop) {
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(sock, &readfds);
@@ -100,6 +108,7 @@ int main(int argc, char** argv) {
         timeout.tv_usec = 0;
         int activity = select(sock + 1, &readfds, NULL, NULL, &timeout);
         if (activity < 0) {
+            if (errno == EINTR) continue;
             perror("select errored");
             close(sock);
             return 78;
@@ -138,6 +147,8 @@ int main(int argc, char** argv) {
            }
         }
     }
+    free(buffer);
     close(sock);
+    printf("Shutdown...(\n");
     return 0;
 }
